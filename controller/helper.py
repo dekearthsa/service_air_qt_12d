@@ -142,5 +142,5 @@ def merged_scrub_function(df_full, df_extract):
         pd.to_datetime(merged_before_scrub["Report time"], errors="coerce").astype("int64") // 10**6)
 
     merged_before_scrub = merged_before_scrub[merged_before_scrub['sensor_type'] != "1"]
-    
+    # print(merged_before_scrub)
     return merged_before_scrub.drop(columns=['Content'])

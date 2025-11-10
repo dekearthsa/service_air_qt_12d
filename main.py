@@ -1,5 +1,3 @@
-## using python3.13
-
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
@@ -92,12 +90,12 @@ def RouteUploadExcel():
             else:
                 df_insert[db_col] = merged[src_col]
 
-        if df_insert["timestamp"].isna().any():
-            if col_map["report_time"] is not None:
-                ts = pd.to_datetime(df_insert["report_time"], errors="coerce")
-                df_insert.loc[df_insert["timestamp"].isna(), "timestamp"] = (ts.view("int64") // 10**6)
+        # if df_insert["timestamp"].isna().any():
+        #     if col_map["report_time"] is not None:
+        #         ts = pd.to_datetime(df_insert["report_time"], errors="coerce")
+        #         df_insert.loc[df_insert["timestamp"].isna(), "timestamp"] = (ts.view("int64") // 10**6)
 
-        df_insert["timestamp"] = pd.to_numeric(df_insert["timestamp"], errors="coerce").astype("Int64")
+        # df_insert["timestamp"] = pd.to_numeric(df_insert["timestamp"], errors="coerce").astype("Int64")
         df_insert["value"] = pd.to_numeric(df_insert["value"], errors="coerce")
 
         before = len(df_insert)
@@ -134,6 +132,24 @@ def RouteUploadExcel():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+# /get?start=10000&end=20000
+@app.route("/get", methods=["GET"])
+def RouteGet():
+    try:
+        startDate = request.args.get('start')
+        endDate = request.args.get('end')
+        print(startDate, endDate)
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT DISTINCT * FROM sensor_data
+                WHERE timestamp BETWEEN ? AND ?
+                ORDER BY timestamp ASC
+            """, (int(startDate), int(endDate)))  
+            rows = cur.fetchall()
+            return jsonify({"ok": True, "rows": rows}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 if __name__ == '__main__':
