@@ -5,5 +5,8 @@ conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 # cursor.execute(""" DROP TABLE sensor_data """)
-data =cursor.execute(""" SELECT * FROM sensor_data WHERE timestamp BETWEEN  1761824991000 AND 1761954587000  """).fetchall()
+data =cursor.execute(""" SELECT DISTINCT sensor_type FROM sensor_data   """).fetchall()
 print(data)
+
+
+## 'Temp before filter',), ('Diff pressure',), ('Fan speed',), ('Duct temperature',), ('Duct humidity',), ('Duct co2',), ('Duct voc',) ('CO2',), ('Temperature',), ('Humidity',), ('Voltage',), ('RSSI',)

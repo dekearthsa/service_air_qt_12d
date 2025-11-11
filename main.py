@@ -94,8 +94,8 @@ def RouteUploadExcel():
         #     if col_map["report_time"] is not None:
         #         ts = pd.to_datetime(df_insert["report_time"], errors="coerce")
         #         df_insert.loc[df_insert["timestamp"].isna(), "timestamp"] = (ts.view("int64") // 10**6)
-
         # df_insert["timestamp"] = pd.to_numeric(df_insert["timestamp"], errors="coerce").astype("Int64")
+
         df_insert["value"] = pd.to_numeric(df_insert["value"], errors="coerce")
 
         before = len(df_insert)
@@ -132,23 +132,151 @@ def RouteUploadExcel():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-# /get?start=10000&end=20000
+
+
+#  //  http://127.0.0.1:3012/get?sensor_type=CO2&asset_name=ddd&project=d17&start=1760018660000&end=1761782581000
 @app.route("/get", methods=["GET"])
 def RouteGet():
     try:
+        sensor_type = request.args.get("sensor_type") ## all
+        asset_name = request.args.get("asset_name") ## all
+        project = request.args.get("project")
         startDate = request.args.get('start')
         endDate = request.args.get('end')
-        print(startDate, endDate)
+        # print(startDate, endDate, sensor_type, asset_name ,project)
+        if sensor_type == "all":
+            with sqlite3.connect(DB_PATH) as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT DISTINCT 
+                            data_type,
+                            asset_number,
+                            asset_name,
+                            system,
+                            install_location,
+                            device_type,
+                            device_id,
+                            project,
+                            timestamp,
+                            sensor_type,
+                            value
+                            FROM sensor_data
+                                WHERE sensor_type in (
+                                        "CO2", 
+                                        "Temperature", 
+                                        "Humidity",
+                                        "Voltage",
+                                        "RSSI",
+                                        "Temp before filter",
+                                        "Diff pressure",
+                                        "Fan speed",
+                                        "Duct temperature",
+                                        "Duct humidity",
+                                        "Duct co2",
+                                        "Duct voc") AND timestamp BETWEEN ? AND ? 
+                            ORDER BY timestamp ASC
+                """, (int(startDate), int(endDate)))  
+                rows = cur.fetchall()
+                return jsonify({"ok": True, "rows": rows}), 200
+        else:
+            with sqlite3.connect(DB_PATH) as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT DISTINCT 
+                            data_type,
+                            asset_number,
+                            asset_name,
+                            system,
+                            install_location,
+                            device_type,
+                            device_id,
+                            project,
+                            timestamp,
+                            sensor_type,
+                            value
+                            FROM sensor_data
+                                WHERE sensor_type = ? 
+                            AND asset_name = ?
+                            AND project = ?
+                            AND timestamp BETWEEN ? AND ? 
+
+                            ORDER BY timestamp ASC
+                """, (sensor_type, asset_name, 
+                      project, int(startDate), int(endDate)))  
+                rows = cur.fetchall()
+                return jsonify({"ok": True, "rows": rows}), 200
+            
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    
+@app.route("/get/param", methods=["GET"])
+def RoutGetParam():
+    try:
+        data_type = []
+        asset_number = []
+        asset_name = []
+        system = []
+        install_location=[]
+        device_type =[]
+        device_id=[]
+        project=[]
+        sensor_type=[]
         with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
             cur.execute("""
-                SELECT DISTINCT * FROM sensor_data
-                WHERE timestamp BETWEEN ? AND ?
-                ORDER BY timestamp ASC
-            """, (int(startDate), int(endDate)))  
+                SELECT DISTINCT 
+                        data_type, 
+                        asset_number,
+                        asset_name,
+                        system,
+                        install_location,
+                        device_type,
+                        device_id,
+                        project,
+                        sensor_type 
+                        FROM sensor_data
+                        WHERE sensor_type in (
+                                    "CO2", 
+                                    "Temperature", 
+                                    "Humidity",
+                                    "Voltage",
+                                    "RSSI",
+                                    "Temp before filter",
+                                    "Diff pressure",
+                                    "Fan speed",
+                                    "Duct temperature",
+                                    "Duct humidity",
+                                    "Duct co2",
+                                    "Duct voc")
+            """)  
             rows = cur.fetchall()
-            return jsonify({"ok": True, "rows": rows}), 200
+            
+            for el in rows:
+                data_type.append(el[0])
+                asset_number.append(el[1])
+                asset_name.append(el[2])
+                system.append(el[3])
+                install_location.append(el[4])
+                device_type.append(el[5])
+                device_id.append(el[6])
+                project.append(el[7])
+                sensor_type.append(el[8])
+
+            payload_param = {
+                "data_type":list(set(data_type)),
+                "asset_number": list(set(asset_number)),
+                "asset_name": list(set(asset_name)),
+                "system":list(set(system)),
+                "install_location": list(set(install_location)),
+                "device_type": list(set(device_type)),
+                "device_id": list(set(device_id)),
+                "project": list(set(project)),
+                "sensor_type": list(set(sensor_type))
+            }
+            # print(payload_param)
+            return {"ok": True, "data":payload_param}, 200
     except Exception as e:
+        # print(f"RoutGetParam  error => {e}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
