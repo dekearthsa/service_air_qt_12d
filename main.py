@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
 import pandas as pd
-from controller.helper import cleaning_data_scrub, merged_scrub_function
+from controller.helper import cleaning_data, merged_function
 
 DB_PATH = "sensor_data_projectD.db"
 conn = sqlite3.connect(DB_PATH)
@@ -54,13 +54,12 @@ def RouteUploadExcel():
             return jsonify({"ok": False, "error": "unsupported file type; use .xlsx/.xls/.csv"}), 415
 
         # 3) แตกค่า content → long (sensor_type,value,report_time)
-        df_extract = cleaning_data_scrub(df_full)
+        df_extract = cleaning_data(df_full)
 
         # 4) รวมกลับกับ df_full และสร้าง timestamp (ms) ภายในฟังก์ชัน
-        merged = merged_scrub_function(df_full, df_extract)
+        merged = merged_function(df_full, df_extract)
 
         # ---------- เตรียมข้อมูลสำหรับ insert ----------
-        # ฟังก์ชันช่วยหา column แบบ case-insensitive
         def find_col(df, *cands):
             cands_l = [c.strip().lower() for c in cands]
             for col in df.columns:
@@ -90,18 +89,15 @@ def RouteUploadExcel():
             else:
                 df_insert[db_col] = merged[src_col]
 
-        # if df_insert["timestamp"].isna().any():
-        #     if col_map["report_time"] is not None:
-        #         ts = pd.to_datetime(df_insert["report_time"], errors="coerce")
-        #         df_insert.loc[df_insert["timestamp"].isna(), "timestamp"] = (ts.view("int64") // 10**6)
-        # df_insert["timestamp"] = pd.to_numeric(df_insert["timestamp"], errors="coerce").astype("Int64")
-
         df_insert["value"] = pd.to_numeric(df_insert["value"], errors="coerce")
 
+
+        ## drop columns ที่ไม่มีข้อมูล 
         before = len(df_insert)
         df_insert = df_insert.dropna(subset=["sensor_type", "value", "timestamp"])
-        after = len(df_insert)
+        after = len(df_insert)  
 
+        ## แปลงเป็น array tuple เพื่อให้เตรียมใส่ใน sqlite 
         rows = list(
             df_insert[[
                 "data_type", "asset_number", "asset_name", "system", "install_location",
@@ -143,7 +139,8 @@ def RouteGet():
         project = request.args.get("project")
         startDate = request.args.get('start')
         endDate = request.args.get('end')
-        # print(startDate, endDate, sensor_type, asset_name ,project)
+        # print()
+        print(startDate, endDate, sensor_type, asset_name ,project)
         if sensor_type == "all":
             with sqlite3.connect(DB_PATH) as conn:
                 cur = conn.cursor()
@@ -161,19 +158,13 @@ def RouteGet():
                             sensor_type,
                             value
                             FROM sensor_data
-                                WHERE sensor_type in (
-                                        "CO2", 
-                                        "Temperature", 
-                                        "Humidity",
-                                        "Voltage",
-                                        "RSSI",
-                                        "Temp before filter",
-                                        "Diff pressure",
-                                        "Fan speed",
-                                        "Duct temperature",
-                                        "Duct humidity",
-                                        "Duct co2",
-                                        "Duct voc") AND timestamp BETWEEN ? AND ? 
+                                WHERE sensor_type NOT IN (
+                            "Register start address", "Number of registers", 
+                            "Hlr connect status", "Hlr operation mode", "Switch-interlock state",
+                            "Switch-co2 state", "Co2 level scrub mode", "Co2 level enable scrub mode", 
+                            "Interlock status", "Clean air damper open-alarm", "Exhaust air damper open-alarm",
+                            "Km1 no feedback-alarm", "Fire-alarm", "Service door-alarm", "Fan-alarm", 
+                            "High temperature-alarm") AND timestamp BETWEEN ? AND ? 
                             ORDER BY timestamp ASC
                 """, (int(startDate), int(endDate)))  
                 rows = cur.fetchall()
@@ -199,11 +190,11 @@ def RouteGet():
                             AND asset_name = ?
                             AND project = ?
                             AND timestamp BETWEEN ? AND ? 
-
                             ORDER BY timestamp ASC
                 """, (sensor_type, asset_name, 
                       project, int(startDate), int(endDate)))  
                 rows = cur.fetchall()
+                print(rows)
                 return jsonify({"ok": True, "rows": rows}), 200
             
     except Exception as e:
@@ -235,19 +226,10 @@ def RoutGetParam():
                         project,
                         sensor_type 
                         FROM sensor_data
-                        WHERE sensor_type in (
-                                    "CO2", 
-                                    "Temperature", 
-                                    "Humidity",
-                                    "Voltage",
-                                    "RSSI",
-                                    "Temp before filter",
-                                    "Diff pressure",
-                                    "Fan speed",
-                                    "Duct temperature",
-                                    "Duct humidity",
-                                    "Duct co2",
-                                    "Duct voc")
+                        WHERE sensor_type NOT IN  ("Register start address", "Number of registers", "Hlr connect status", "Hlr operation mode", "Switch-interlock state",
+                        "Switch-co2 state", "Co2 level scrub mode", "Co2 level enable scrub mode", "Interlock status", "Clean air damper open-alarm", "Exhaust air damper open-alarm",
+                        "Km1 no feedback-alarm", "Fire-alarm", "Service door-alarm", "Fan-alarm", "High temperature-alarm"
+                        )
             """)  
             rows = cur.fetchall()
             
@@ -282,3 +264,18 @@ def RoutGetParam():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=3012, debug=True)
+
+
+    # WHERE sensor_type not in (
+    #                                 "CO2", 
+    #                                 "Temperature", 
+    #                                 "Humidity",
+    #                                 "Voltage",
+    #                                 "RSSI",
+    #                                 "Temp before filter",
+    #                                 "Diff pressure",
+    #                                 "Fan speed",
+    #                                 "Duct temperature",
+    #                                 "Duct humidity",
+    #                                 "Duct co2",
+    #                                 "Duct voc")

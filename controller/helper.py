@@ -5,7 +5,7 @@ import re
 num_re = re.compile(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?')
 time_token_re = re.compile(r'^\d{1,2}:\d{2}$') 
 CANON_MAP = {
-    "co2": "CO2",
+    "Co2": "CO2",
     "temperature": "Temperature",
     "humidity": "Humidity",
     "voltage": "Voltage",
@@ -81,7 +81,7 @@ def parse_content_row(s: str):
 def pretty_label_from_key(normalized_key: str) -> str:
     return normalized_key.capitalize()
 
-def cleaning_data_scrub(df: pd.DataFrame):
+def cleaning_data(df: pd.DataFrame):
     # หา Content + Report time แบบ case-insensitive
     content_col = next((c for c in df.columns if str(c).strip().lower() == "content"), None)
     if content_col is None:
@@ -118,7 +118,7 @@ def cleaning_data_scrub(df: pd.DataFrame):
     return df_extract
 
 
-def merged_scrub_function(df_full, df_extract):
+def merged_function(df_full, df_extract):
     report_col_left = next((c for c in df_full.columns if str(c).strip().lower() == "report time"), None)
     if report_col_left is None:
         raise ValueError(f"df_bf_sc ไม่มีคอลัมน์ 'Report time' (found: {list(df_full.columns)})")
