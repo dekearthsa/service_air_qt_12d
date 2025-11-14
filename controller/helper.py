@@ -1,38 +1,9 @@
 import pandas as pd
 import re
-
+pd.set_option('display.max_columns', None)
 ## setup format
 num_re = re.compile(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?')
 time_token_re = re.compile(r'^\d{1,2}:\d{2}$') 
-CANON_MAP = {
-    "Co2": "CO2",
-    "temperature": "Temperature",
-    "humidity": "Humidity",
-    "voltage": "Voltage",
-    "rssi": "RSSI",
-    "Temp Before Filter": "Temp Before Filter",
-    "Diff Pressure": "Diff Pressure",
-    "Fan Speed": "Fan Speed",
-    "Duct Temperature": "Duct Temperature",
-    "Duct Humidity": "Duct Humidity",
-    "Duct CO2": "Duct CO2",
-    "Duct VOC": "Duct VOC",
-    "HLR Connect Status": "HLR Connect Status",
-    "HLR Operation Mode": "HLR Operation Mode",
-    "Switch-Interlock State": "Switch-Interlock State",
-    "Switch-CO2 State": "Switch-CO2 State",
-    "Co2 Level Scrub Mode": "Co2 Level Scrub Mode",
-    "Co2 Level Enable Scrub Mode": "Co2 Level Enable Scrub Mode",
-    "Interlock Status": "Interlock Status",
-    "Clean Air Damper Open-Alarm": "Clean Air Damper Open-Alarm",
-    "Exhaust Air Damper Open-Alarm": "Exhaust Air Damper Open-Alarm",
-    "KM1 No Feedback-Alarm": "KM1 No Feedback-Alarm",
-    "Fire-Alarm": "Fire-Alarm",
-    "Service Door-Alarm": "Service Door-Alarm",
-    "Fan-Alarm": "Fan-Alarm",
-    "High Temperature-Alarm": "High Temperature-Alarm"
-}
-
 
 def parse_numeric(text: str):
     if text is None or (isinstance(text, float) and pd.isna(text)):
@@ -74,12 +45,59 @@ def parse_content_row(s: str):
         key, val = p.split(":", 1)
         nkey = normalize_key(key)
         out[nkey] = parse_numeric(val)
-
     return out
 
 
 def pretty_label_from_key(normalized_key: str) -> str:
-    return normalized_key.capitalize()
+    # return normalized_key.capitalize()
+    return normalized_key.lower()
+
+def adjust_co2(sensor_type, is_param, value):
+    # print(sensor_type, is_param, value)
+    if is_param.lower() == "co2" or is_param == "co2 level scrub mode" or is_param == "co2 level enable scrub mode":
+        # print(sensor_type, is_param, value)
+        if sensor_type == "Before Scrub":
+            # print(55.215733 + (1.072297996 * value))
+            return 55.215733 + (1.072297996 * value)
+        elif sensor_type == "Interlock 4C":
+            # print(16.238157 + (1.048766343 * value))
+            return 16.238157 + (1.048766343 * value)
+        elif sensor_type == "After Scrub":
+            # print(52.831276 + (1.06400140 * value))
+            return 52.831276 + (1.06400140 * value)
+        else:
+            return value
+    else:
+        return value
+
+def convert_operation(asset_name, operation, v):
+    
+    if asset_name == "Interlock 4C":
+        if operation == "hlr operation mode":
+            # print(asset_name, operation, v)
+            if int(v) == 0:
+                return "manual_mode"
+            elif int(v) == 1:
+                return "standby_mode"
+            elif int(v) == 2:
+                return "scrubbing_mode"
+            elif int(v) == 3:
+                return "regen_mode"
+            elif int(v) == 4:
+                return "cooldown_mode"
+            elif int(v) == 5:
+                return "alarming"
+            else: 
+                return f"operation_code {v}"
+        else:
+            return "No operation detect"
+    else:
+        if asset_name == "Before Scrub":
+            return "before_scrub"
+        elif asset_name == "After Scrub":
+            return "after_scrub"
+        else:
+            return "none"
 
 def cleaning_data(df: pd.DataFrame):
     # หา Content + Report time แบบ case-insensitive
@@ -100,18 +118,23 @@ def cleaning_data(df: pd.DataFrame):
                 continue
             if v is None or (isinstance(v, float) and pd.isna(v)):
                 continue
-            canon_label = CANON_MAP.get(k, pretty_label_from_key(k))
-
+            canon_label =pretty_label_from_key(k)
+            # print(df.iloc[idx]["Asset name"] )
+            data_convert = adjust_co2(df.iloc[idx]["Asset name"], canon_label, float(v))
+            operation_name = convert_operation(df.iloc[idx]["Asset name"], canon_label, v)
+            # print(operation_name)
             long_records.append({
                 "row_index": idx,
                 "report_time": report_time_val,
                 "content_time": row.get("content_time"),
                 "sensor_type": canon_label,
-                "value": float(v),
+                "operation": operation_name,
+                "value_raw": float(v),
+                "value": float(data_convert),
             })
 
     df_extract = pd.DataFrame(long_records, columns=[
-        "row_index", "report_time", "content_time", "sensor_type", "value"
+        "row_index", "report_time", "content_time", "sensor_type", "operation", "value_raw", "value"
     ])
     df_extract = df_extract.drop(columns=["content_time", "row_index"])
 
@@ -133,7 +156,7 @@ def merged_function(df_full, df_extract):
     right["_rt_key"] = pd.to_datetime(right[report_col_right], errors="coerce")
 
     merged_before_scrub = left.merge(
-        right[["_rt_key", "sensor_type", "value"]],  
+        right[["_rt_key", "sensor_type", "operation","value_raw", "value"]],  
         on="_rt_key",
         how="left"
     ).drop(columns=["_rt_key"])
@@ -142,5 +165,37 @@ def merged_function(df_full, df_extract):
         pd.to_datetime(merged_before_scrub["Report time"], errors="coerce").astype("int64") // 10**6)
 
     merged_before_scrub = merged_before_scrub[merged_before_scrub['sensor_type'] != "1"]
-    # print(merged_before_scrub)
+    # print("merged_before_scrub")
+    # print(merged_before_scrub[merged_before_scrub['sensor_type'] == 'hlr operation mode'])
     return merged_before_scrub.drop(columns=['Content'])
+
+
+def extract_columns(df: pd.DataFrame):
+    select_sensor_type = ["co2","voc","temperature","humidity", "diff_pressure"]
+
+    df["sensor_type"] = (
+        df["sensor_type"]
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "_")
+        .str.replace("-", "_")
+    )
+
+    df_wide = df.pivot_table(
+        index='timestamp',           
+        columns='sensor_type',     
+        values='value',             
+        aggfunc='first'            
+    ).reset_index()
+
+    select_sensor_type = ["co2","voc","temperature","humidity"]
+    df = df[df["sensor_type"].isin(select_sensor_type)]
+    # df = df.drop(columns=['id'])
+    df_main = pd.merge(df, df_wide, on='timestamp',how='inner')
+    df_main = df_main.drop_duplicates()
+    if df_main['install_location'][0] == "Inlet":
+        df_main = df_main.drop(columns=['co2','temperature', 'humidity', 'rssi','voc', 'voltage', 'version_number', 'diff_pressure'])
+        return df_main
+    else:
+        df_main = df_main.drop(columns=['co2','temperature', 'humidity', 'rssi', 'voltage', 'version_number'])
+        return df_main
